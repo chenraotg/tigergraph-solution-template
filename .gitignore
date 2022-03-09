@@ -1,0 +1,5 @@
+logs
+web-ui/cypress/videos/**
+web-ui/cypress/screenshots/**
+web-ui/public/config.json
+

@@ -1,0 +1,26 @@
+{
+  "tigergraph": {
+    "httpMethod": "http",
+    "host": "localhost",
+    "restPort": 9000,
+    "graphName": "Data360",
+    "username": "tigergraph",
+    "password": "tigergraph",
+    "responseLimit": 32000000,
+    "gsqlQueryTimeout": 60000,
+    "tokenLifetime": 3600,
+    "version": 3.4
+  },
+  "webserver": {
+    "listeningPort": 4001,
+    "hashCost": 10,
+    "tokenSecret": "SomeStrongSecret",
+    "tokenDuration": 604800,
+    "authentication": false
+  },
+  "frontend": {
+    "server": "34.135.198.69",
+    "serverPort": 4001
+  }
+}
+

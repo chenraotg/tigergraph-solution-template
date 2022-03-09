@@ -1,0 +1,26 @@
+USE GRAPH D360_Auth
+
+CREATE QUERY d360_signup(
+    STRING username,
+    STRING password,
+    STRING email = ""
+) FOR GRAPH D360_Auth SYNTAX v2 { 
+
+    /*
+    Sub query d360_check_username_exist used.
+    This query is used to process user registration.
+    
+    Parameters :
+    username : STRING user's name.
+    password : STRING user's password.
+    email : STRING user's email.
+    */
+  
+    IF d360_check_username_exist(username) THEN
+        PRINT "Username exist!" AS error;
+    ELSE
+        INSERT INTO D360_User (PRIMARY_ID , password, creation_date, email, last_active)
+            VALUES(username, password, now(), email, now());
+        PRINT "Sign up successfully!" AS success;
+    END;
+}

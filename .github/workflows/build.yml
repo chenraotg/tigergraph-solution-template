@@ -1,0 +1,490 @@
+# This is a basic workflow to help you get started with Actions
+
+name: Data360 Build
+
+env:
+  AWS_S3_BUCKET: tigergraph-build-artifacts
+  AWS_REGION: us-west-1
+  AWS_S3_URL: https://tigergraph-build-artifacts.s3-us-west-1.amazonaws.com/
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+    branches:
+      - "**"
+
+  workflow_dispatch:
+
+jobs:
+  buildnumber:
+    name: Generate Build Number
+    runs-on: ubuntu-18.04
+    outputs:
+      build_number: ${{ steps.buildnumber.outputs.build_number }}
+    steps:
+      - name: Generate build number
+        if: github.ref == 'refs/heads/dev'
+        id: buildnumber
+        uses: einaregilsson/build-number@v3 
+        with:
+          token: ${{secrets.github_token}}
+        
+      - name: Set build number to env
+        if: github.ref == 'refs/heads/dev'
+        run: |
+          echo "BUILD_NUMBER=${{ steps.buildnumber.outputs.build_number }}" >> $GITHUB_ENV
+
+      - name: Set build number to 0
+        if: github.ref != 'refs/heads/dev'
+        run: |
+          echo "BUILD_NUMBER=0" >> $GITHUB_ENV
+          
+  web-ui-lint:
+    name: Web UI Lint
+    runs-on: ubuntu-18.04
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Setup Node 16
+        uses: actions/setup-node@v1
+        with:
+          node-version: 16
+
+      - name: Cache Node modules
+        uses: actions/cache@v2
+        env:
+          cache-name: node-modules
+        with:
+          path: ${{ github.workspace }}/web-ui/node_modules
+          key: ${{ runner.os }}-${{ env.cache-name }}-${{ hashFiles('package.json') }}
+
+      - name: Set up Node modules
+        run: yarn --ignore-engines
+        working-directory: web-ui
+
+      - name: Run lint
+        run: yarn lint
+        working-directory: web-ui
+
+  web-server-lint:
+    name: Web Server Lint
+    runs-on: ubuntu-18.04
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Setup Node 16
+        uses: actions/setup-node@v1
+        with:
+          node-version: 16
+
+      - name: Cache Node modules
+        uses: actions/cache@v2
+        env:
+          cache-name: node-modules
+        with:
+          path: ${{ github.workspace }}/web-server/node_modules
+          key: ${{ runner.os }}-${{ env.cache-name }}-${{ hashFiles('package.json') }}
+
+      - name: Set up Node modules
+        run: yarn --ignore-engines
+        working-directory: web-server
+
+      - name: Run lint
+        run: yarn lint
+        working-directory: web-server
+     
+  web-ui-test:
+    name: Web UI Test
+    runs-on: ubuntu-18.04
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Setup Node 16
+        uses: actions/setup-node@v1
+        with:
+          node-version: 16
+
+      - name: Cache Node modules
+        uses: actions/cache@v2
+        env:
+          cache-name: node-modules
+        with:
+          path: ${{ github.workspace }}/web-ui/node_modules
+          key: ${{ runner.os }}-${{ env.cache-name }}-${{ hashFiles('package.json') }}
+
+      - name: Set up Node modules
+        run: yarn --ignore-engines
+        working-directory: web-ui
+
+      - name: Run test
+        run: yarn test --watch false --coverage --passWithNoTests
+        working-directory: web-ui
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v2
+        with:
+          name: web-ui-coverage
+          path: web-ui/coverage
+         
+  web-server-test:
+    name: Web Server Test
+    runs-on: ubuntu-18.04
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Setup Node 16
+        uses: actions/setup-node@v1
+        with:
+          node-version: 16
+
+      - name: Cache Node modules
+        uses: actions/cache@v2
+        env:
+          cache-name: node-modules
+        with:
+          path: ${{ github.workspace }}/web-server/node_modules
+          key: ${{ runner.os }}-${{ env.cache-name }}-${{ hashFiles('package.json') }}
+
+      - name: Set up Node modules
+        run: yarn --ignore-engines
+        working-directory: web-server
+
+      - name: Run test
+        run: yarn test --watch false --coverage --passWithNoTests
+        working-directory: web-server
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v2
+        with:
+          name: web-server-coverage
+          path: web-server/coverage
+  
+  web-ui-build:
+    name: Web UI Build
+    needs: [  web-ui-lint, web-ui-test, buildnumber ]
+    runs-on: ubuntu-18.04
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Setup Node 16
+        uses: actions/setup-node@v1
+        with:
+          node-version: 16
+
+      - name: Cache Node modules
+        uses: actions/cache@v2
+        env:
+          cache-name: node-modules
+        with:
+          path: ${{ github.workspace }}/web-ui/node_modules
+          key: ${{ runner.os }}-${{ env.cache-name }}-${{ hashFiles('package.json') }}
+
+      - name: Set up Node modules
+        run: yarn --ignore-engines
+        working-directory: web-ui
+
+      - name: Print the build number
+        run: echo "Build number is ${{ needs.buildnumber.outputs.build_number }}"
+
+      - uses: microsoft/variable-substitution@v1 
+        with:
+            files: 'web-ui/src/version.json'
+        env:
+            build: ${{ needs.buildnumber.outputs.build_number }}
+
+      - name: Build static files
+        run: |
+          yarn build -c production
+          tar zcvf data360.tar.gz build && rm -rf build
+        working-directory: web-ui
+        
+      - name: Generate third-party license report
+        run: |
+          yarn global add license-checker
+          yarn licenses list
+        working-directory: web-ui
+        
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: web-ui-release
+          path: web-ui/data360.tar.gz
+   
+  web-server-build:
+    name: Web Server Build
+    needs: [  web-server-lint, web-server-test, buildnumber]
+    runs-on: ubuntu-18.04
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Setup Node 12
+        uses: actions/setup-node@v1
+        with:
+          node-version: 12
+
+      - name: Cache Node modules
+        uses: actions/cache@v2
+        id: cache
+        env:
+          cache-name: server-node-modules
+        with:
+          path: ${{ github.workspace }}/web-server/node_modules
+          key: ${{ runner.os }}-server-${{ env.cache-name }}-${{ hashFiles('package.json') }}=
+
+      - name: Set up Node modules
+        run: |
+          npm install
+        working-directory: web-server
+
+      - name: Print the build number
+        run: echo "Build number is ${{ needs.buildnumber.outputs.build_number }}"
+      
+      - name: Build static files
+        run: |
+          npm run build
+          tar zcvf data360-server.tar.gz dist package.json package-lock.json && rm -rf dist
+        working-directory: web-server
+        
+      - name: Generate third-party license report
+        run: |
+          npm install -g license-checker
+          license-checker
+        working-directory: web-server
+      
+      - name: Upload Configs
+        uses: actions/upload-artifact@v2
+        with:
+          name: web-config-release
+          path: configs/
+        
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: web-server-release
+          path: web-server/data360-server.tar.gz
+
+  publish:
+    name: Publish artifacts
+    if: github.ref == 'refs/heads/dev'
+    needs: [web-ui-build, web-server-build, buildnumber]
+    runs-on: ubuntu-18.04
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Download UI build artifacts
+        uses: actions/download-artifact@v2
+        with:
+          name: web-ui-release
+          path: release
+          
+      - name: Download server build artifacts
+        uses: actions/download-artifact@v2
+        with:
+          name: web-server-release
+          path: release
+          
+      - name: Download server configs artifacts
+        uses: actions/download-artifact@v2
+        with:
+          name: web-config-release
+          path: release
+
+      - name: Download coverage report
+        uses: actions/download-artifact@v2
+        with:
+          name: web-ui-coverage
+          path: coverage
+
+      - name: Print the build number
+        run: echo "Build number is ${{ needs.buildnumber.outputs.build_number }}"
+
+      - name: Get commit SHA
+        id: get-commit
+        shell: bash
+        run: |
+          sha=${{ github.sha }}
+          if [ "${{ github.event_name }}" == "pull_request" ]; then sha=${{ github.event.pull_request.head.sha }}; fi
+          echo "::set-output name=sha::$(echo $sha)"
+          
+      - name: Upload build artifacts to S3
+        uses: jakejarvis/s3-sync-action@master
+        with:
+          args: --follow-symlinks --delete
+        env:
+          AWS_S3_BUCKET: ${{ env.AWS_S3_BUCKET }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_S3_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+          SOURCE_DIR: "release"
+          DEST_DIR: ${{ github.repository }}/${{ needs.buildnumber.outputs.build_number }}/release
+
+      - name: Upload coverage report to S3
+        uses: jakejarvis/s3-sync-action@master
+        with:
+          args: --follow-symlinks --delete
+        env:
+          AWS_S3_BUCKET: ${{ env.AWS_S3_BUCKET }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_S3_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+          SOURCE_DIR: "coverage"
+          DEST_DIR: ${{ github.repository }}/${{ needs.buildnumber.outputs.build_number }}/coverage
+
+      - name: Calculate Checksum
+        if: github.event_name == 'pull_request'
+        run: |
+          echo -e '**Checksum**\n```' | tee comment.txt
+          sha256sum release/* | tee -a comment.txt
+          echo -e '```' | tee -a comment.txt
+          
+      - name: Generate PR comment
+        if: github.event_name == 'pull_request'
+        run: >-
+          python3 scripts/pr-comment.py
+          --s3_bucket ${{ env.AWS_S3_BUCKET }}
+          --region ${{ env.AWS_REGION }}
+          --repo ${{ github.repository }}
+          --sha ${{ steps.get-commit.outputs.sha }}
+          --files_dir release
+          --coverage $(grep -m 1 -o '<span.*</span>' coverage/index.html | sed 's/\(<span class="strong">\|<\/span>\)//g')
+          --coverage_file index.html | tee -a comment.txt
+          
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            github.pulls.createReview({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+              event: 'COMMENT',
+              body: fs.readFileSync('comment.txt', 'utf8')
+            });
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            github.pulls.createReview({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+              event: 'COMMENT',
+              body: 'Build number is <strong>${{ needs.buildnumber.outputs.build_number }}</strong>'
+            });
+
+  deploy:
+    name: deploy
+    if: github.ref == 'refs/heads/dev'
+    needs: [publish, buildnumber]
+    runs-on: ubuntu-18.04
+    steps: 
+    - name: Get commit SHA
+      id: get-commit
+      shell: bash
+      run: |
+        sha=${{ github.sha }}
+        if [ "${{ github.event_name }}" == "pull_request" ]; then sha=${{ github.event.pull_request.head.sha }}; fi
+        echo "::set-output name=sha::$(echo $sha)"
+
+    - name: Print the build number
+      run: echo "Build number is ${{ needs.buildnumber.outputs.build_number }}"
+
+    - name: SSH and deploy app
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.FSSH_HOST }}
+        username: ${{ secrets.SSH_USERNAME }}
+        key: ${{ secrets.FSERVERSSHKEY }}
+        port: ${{ secrets.SSH_PORT }}
+        script: |
+          cd
+          cd data360_web
+          rm -r build
+          curl '${{env.AWS_S3_URL}}${{ github.repository }}/${{ needs.buildnumber.outputs.build_number }}/release/data360.tar.gz' -o 'data360.${{ needs.buildnumber.outputs.build_number }}.tar.gz'
+          tar -xf data360.${{ needs.buildnumber.outputs.build_number }}.tar.gz
+
+    - name: SSH and upload config
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.FSSH_HOST }}
+        username: ${{ secrets.SSH_USERNAME }}
+        key: ${{ secrets.FSERVERSSHKEY }}
+        port: ${{ secrets.SSH_PORT }}
+        script: |
+          cd
+          cd configs
+          rm config.json
+          curl '${{env.AWS_S3_URL}}${{ github.repository }}/${{ needs.buildnumber.outputs.build_number }}/release/config.json' -o 'config.json'
+          
+    - name: SSH and deploy back app
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.FSSH_HOST }}
+        username: ${{ secrets.SSH_USERNAME }}
+        key: ${{ secrets.FSERVERSSHKEY }}
+        port: ${{ secrets.SSH_PORT }}
+        script: |
+          cd
+          cd web-server
+          rm -r dist
+          rm -r node_modules
+          rm package.json
+          rm package-lock.json
+          curl '${{env.AWS_S3_URL}}${{ github.repository }}/${{ needs.buildnumber.outputs.build_number}}/release/data360-server.tar.gz' -o 'data360-server.${{ needs.buildnumber.outputs.build_number }}.tar.gz'
+          tar -xf data360-server.${{ needs.buildnumber.outputs.build_number }}.tar.gz
+          npm install --production
+          pm2 restart node-app
+
+    - name: Zuplip Message
+      run: |-
+        curl -sX POST https://zulip.graphtiger.com/api/v1/messages \
+          -u ${{ secrets.ZULIP_JOHN_USERNAME }}:${{ secrets.ZULIP_JOHN_APIKEY }} \
+          --data-urlencode type=stream \
+          --data-urlencode to=Application \
+          --data-urlencode subject=Deployment \
+          --data-urlencode "content=Hi all, Data 360 build number ${{ needs.buildnumber.outputs.build_number }} has been successfully deployed to DEV environment http://34.135.198.69:8081/"
+          
+    - name: Slack Message
+      run: |-
+        curl -X POST ${{secrets.SLACK_APP_DEPLOYMENT_WEBHOOK_URL}} -H 'Content-type:application/json' \
+          --data "{'text':'Hi all, Data 360 build number ${{ needs.buildnumber.outputs.build_number }} has been successfully deployed to DEV environment http://34.135.198.69:8081/'}"
+          
+  web-e2e-test:
+    runs-on: ubuntu-latest
+    needs: [  deploy ]
+    defaults:
+      run:
+        working-directory: ./web-ui
+    steps: 
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Install node
+        uses: actions/setup-node@v2
+        with:
+            node:version: '14'
+      - name: Cypress run
+        uses: cypress-io/github-action@v2
+        with:
+          command: yarn cypress run
+          working-directory: web-ui
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v2
+        if: failure()
+        with:
+          name: cypress-screenshots
+          path: web-ui/cypress/screenshots
+      # Test run video was always captured, so this action uses "always()" condition
+      - uses: actions/upload-artifact@v2
+        if: always()
+        with:
+          name: cypress-videos
+          path: web-ui/cypress/videos
+
