@@ -1,0 +1,11 @@
+tap "homebrew/bundle"
+tap "homebrew/cask", "https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/homebrew-cask.git"
+tap "homebrew/core", "https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/homebrew-core.git"
+tap "homebrew/services", "https://gitee.com/cunkai/homebrew-services.git"
+brew "autoconf"
+brew "cheat"
+brew "figlet"
+brew "nvm"
+brew "openjdk"
+brew "selenium-server", restart_service: true
+cask "chromedriver"
