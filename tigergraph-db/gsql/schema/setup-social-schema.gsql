@@ -1,0 +1,23 @@
+CREATE GRAPH Social()
+
+CREATE SCHEMA_CHANGE JOB setup_social_schema FOR GRAPH Social { 
+
+    /******** Add vertex types ********/
+
+    ADD VERTEX person (
+        PRIMARY_ID username     STRING,
+        age                     INT,
+        gender                  STRING,
+        state                   STRING
+    ) WITH STATS="OUTDEGREE_BY_EDGETYPE",
+           PRIMARY_ID_AS_ATTRIBUTE="true";
+    
+    /******** Add edge types ********/
+
+    ADD UNDIRECTED EDGE friendship(
+        FROM person,       TO person,
+        connect_day        DATETIME
+    );
+}
+
+RUN SCHEMA_CHANGE JOB setup_social_schema

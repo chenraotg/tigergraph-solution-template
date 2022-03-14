@@ -1,0 +1,9 @@
+USE GRAPH Social
+
+CREATE LOADING JOB load_social FOR GRAPH social {
+   DEFINE FILENAME file1="../../data/person.csv";
+   DEFINE FILENAME file2="../../data/friendship.csv";
+
+   LOAD file1 TO VERTEX person VALUES ($"name", $"name", $"age", $"gender", $"state") USING header="true", separator=",";
+   LOAD file2 TO EDGE friendship VALUES ($0, $1, $2) USING header="true", separator=",";
+}
