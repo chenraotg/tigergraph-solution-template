@@ -4,6 +4,7 @@ import config from './config.json';
 import { useEffect } from 'react';
 import { useState } from 'react';
 import axios from 'axios';
+import { PieStatWidget, ComponentProvider } from '@tigergraph/app-ui-lib';
 
 interface Res {
   error: boolean;
@@ -91,13 +92,17 @@ function App() {
 
 
   return (
-    <div className="App">
-      <header className="App-header">
-        <h1>Tigergraph Hello World App!</h1>
-        <p>there are {vertexCount} vertices in {config.graphName} graph</p>
-        <p>there are {edgeCount} edges in {config.graphName} graph</p>
-      </header>
-    </div>
+    <ComponentProvider>
+      <div className="App">
+        <header className="App-header">
+          <h1>TigerGraph Hello World App</h1>
+          <div className="Pie-state-widget-container">
+            <div className='Widget-wrapper'><PieStatWidget data={[{name: 'Total', value: vertexCount}]} title='Vertex Count' isLoading={false}></PieStatWidget></div>
+            <div className='Widget-wrapper'><PieStatWidget data={[{name: 'Total', value: edgeCount}]} title='Edge Count' isLoading={false}></PieStatWidget></div>
+          </div>
+        </header>
+      </div>
+    </ComponentProvider>
   );
 }
 
