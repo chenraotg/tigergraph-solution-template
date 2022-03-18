@@ -19,7 +19,7 @@
     "authentication": false
   },
   "frontend": {
-    "server": "3.86.178.124",
+    "server": "3.89.93.249",
     "serverPort": 9000
   }
 }
