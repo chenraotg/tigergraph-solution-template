@@ -1,12 +1,12 @@
 import express from 'express';
 import * as _fs from 'fs';
 import * as _path from 'path';
+import { createProxyMiddleware } from 'http-proxy-middleware';
 
 const configFileData = _fs.readFileSync(_path.join(__dirname, '../../configs/config.json'), 'utf-8');
 const config = JSON.parse(configFileData);
 
 const app = express()
-const { createProxyMiddleware } = require('http-proxy-middleware')
 const port = 4000
 
 app.get('/', (req: any, res: any) => {

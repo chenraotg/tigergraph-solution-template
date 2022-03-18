@@ -44,7 +44,6 @@ function App() {
     })
   }, []);
 
-
   return (
     <ComponentProvider>
       <div className="App">
