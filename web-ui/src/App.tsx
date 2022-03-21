@@ -31,15 +31,19 @@ function App() {
     }
     const apiPrefix = `http://${config.server}:${config.serverPort}/api`;
     async function getCardinality(body: {function: string, type: string}) {
-      let res = await axios.post<Res>(`${apiPrefix}/builtins/${config.graphName}`, body, {headers: {'content-type': 'application/x-www-form-urlencoded'}});
-      return res;
+      try {
+        let res = await axios.post<Res>(`${apiPrefix}/builtins/${config.graphName}`, body, {headers: {'content-type': 'application/x-www-form-urlencoded'}});
+        return res;
+      } catch (error) {
+        return {data: null};
+      }
     }
     getCardinality(getVertexCardinalityBody).then(res => {
-      const count = res.data.results[0]?.count;
+      const count = res.data?.results?.[0]?.count;
       setVertexCount(count);
     })
     getCardinality(getEdgeCardinalityBody).then(res => {
-      const count = res.data.results[0]?.count;
+      const count = res.data?.results?.[0]?.count;
       setEdgeCount(count);
     })
   }, []);
