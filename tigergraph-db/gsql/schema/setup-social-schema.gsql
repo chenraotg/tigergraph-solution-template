@@ -1,6 +1,6 @@
-CREATE GRAPH Social()
+CREATE GRAPH social()
 
-CREATE SCHEMA_CHANGE JOB setup_social_schema FOR GRAPH Social { 
+CREATE SCHEMA_CHANGE JOB setup_social_schema FOR GRAPH social { 
 
     /******** Add vertex types ********/
 
