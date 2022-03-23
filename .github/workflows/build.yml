@@ -65,7 +65,7 @@ jobs:
         working-directory: web-ui
 
       - name: Run lint
-        run: yarn lint
+        run: yarn lint-staged
         working-directory: web-ui
 
   web-server-lint:
@@ -119,7 +119,7 @@ jobs:
         working-directory: web-ui
 
       - name: Run test
-        run: yarn test --watch false --coverage --passWithNoTests
+        run: yarn test
         working-directory: web-ui
 
       - name: Upload coverage report
@@ -265,197 +265,98 @@ jobs:
           name: web-server-release
           path: web-server/data360-server.tar.gz
 
-  publish:
-    name: Publish artifacts
-    if: github.ref == 'refs/heads/dev'
-    needs: [web-ui-build, web-server-build, buildnumber]
+  getconfig:
+    name: Get deploy config
+    if: github.ref == 'refs/heads/master'
+    needs: [web-server-build, web-ui-build]
     runs-on: ubuntu-18.04
+    outputs:
+      configJson: ${{ steps.set-var.outputs.configJson }}
     steps:
       - uses: actions/checkout@v2
-
-      - name: Download UI build artifacts
-        uses: actions/download-artifact@v2
-        with:
-          name: web-ui-release
-          path: release
-          
-      - name: Download server build artifacts
-        uses: actions/download-artifact@v2
-        with:
-          name: web-server-release
-          path: release
-          
-      - name: Download server configs artifacts
-        uses: actions/download-artifact@v2
-        with:
-          name: web-config-release
-          path: release
-
-      - name: Download coverage report
-        uses: actions/download-artifact@v2
-        with:
-          name: web-ui-coverage
-          path: coverage
-
-      - name: Print the build number
-        run: echo "Build number is ${{ needs.buildnumber.outputs.build_number }}"
-
-      - name: Get commit SHA
-        id: get-commit
-        shell: bash
+      - name: export deploy config
+        id: set-var
         run: |
-          sha=${{ github.sha }}
-          if [ "${{ github.event_name }}" == "pull_request" ]; then sha=${{ github.event.pull_request.head.sha }}; fi
-          echo "::set-output name=sha::$(echo $sha)"
-          
-      - name: Upload build artifacts to S3
-        uses: jakejarvis/s3-sync-action@master
-        with:
-          args: --follow-symlinks --delete
-        env:
-          AWS_S3_BUCKET: ${{ env.AWS_S3_BUCKET }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_S3_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_S3_SECRET_ACCESS_KEY }}
-          AWS_REGION: ${{ env.AWS_REGION }}
-          SOURCE_DIR: "release"
-          DEST_DIR: ${{ github.repository }}/${{ needs.buildnumber.outputs.build_number }}/release
-
-      - name: Upload coverage report to S3
-        uses: jakejarvis/s3-sync-action@master
-        with:
-          args: --follow-symlinks --delete
-        env:
-          AWS_S3_BUCKET: ${{ env.AWS_S3_BUCKET }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_S3_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_S3_SECRET_ACCESS_KEY }}
-          AWS_REGION: ${{ env.AWS_REGION }}
-          SOURCE_DIR: "coverage"
-          DEST_DIR: ${{ github.repository }}/${{ needs.buildnumber.outputs.build_number }}/coverage
-
-      - name: Calculate Checksum
-        if: github.event_name == 'pull_request'
-        run: |
-          echo -e '**Checksum**\n```' | tee comment.txt
-          sha256sum release/* | tee -a comment.txt
-          echo -e '```' | tee -a comment.txt
-          
-      - name: Generate PR comment
-        if: github.event_name == 'pull_request'
-        run: >-
-          python3 scripts/pr-comment.py
-          --s3_bucket ${{ env.AWS_S3_BUCKET }}
-          --region ${{ env.AWS_REGION }}
-          --repo ${{ github.repository }}
-          --sha ${{ steps.get-commit.outputs.sha }}
-          --files_dir release
-          --coverage $(grep -m 1 -o '<span.*</span>' coverage/index.html | sed 's/\(<span class="strong">\|<\/span>\)//g')
-          --coverage_file index.html | tee -a comment.txt
-          
-      - name: Comment on PR
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v3
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const fs = require('fs');
-            github.pulls.createReview({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: context.payload.pull_request.number,
-              event: 'COMMENT',
-              body: fs.readFileSync('comment.txt', 'utf8')
-            });
-
-      - name: Comment on PR
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v3
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            github.pulls.createReview({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: context.payload.pull_request.number,
-              event: 'COMMENT',
-              body: 'Build number is <strong>${{ needs.buildnumber.outputs.build_number }}</strong>'
-            });
-
+          content="$(cat ./configs/config.json)"
+          content="${content//'%'/'%25'}"
+          content="${content//$'\n'/'%0A'}"
+          content="${content//$'\r'/'%0D'}"
+          # end of optional handling for multi line json
+          echo "::set-output name=configJson::$content"
   deploy:
     name: deploy
-    if: github.ref == 'refs/heads/dev'
-    needs: [publish, buildnumber]
+    needs: [getconfig]
     runs-on: ubuntu-18.04
+    strategy:
+      matrix:
+        value: ${{ fromJson(needs.getconfig.outputs.configJson.deploy) }}
     steps: 
-    - name: Get commit SHA
-      id: get-commit
-      shell: bash
-      run: |
-        sha=${{ github.sha }}
-        if [ "${{ github.event_name }}" == "pull_request" ]; then sha=${{ github.event.pull_request.head.sha }}; fi
-        echo "::set-output name=sha::$(echo $sha)"
+     - uses: actions/checkout@v2
+     - name: Setup Node 16
+       uses: actions/setup-node@v1
+       with:
+          node-version: 16
 
-    - name: Print the build number
-      run: echo "Build number is ${{ needs.buildnumber.outputs.build_number }}"
+     - name: Cache Node modules
+       uses: actions/cache@v2
+       env:
+          cache-name: node-modules
+       with:
+          path: ${{ github.workspace }}/web-ui/node_modules
+          key: ${{ runner.os }}-${{ env.cache-name }}-${{ hashFiles('package.json') }}
 
-    - name: SSH and deploy app
-      uses: appleboy/ssh-action@master
-      with:
-        host: ${{ secrets.FSSH_HOST }}
-        username: ${{ secrets.SSH_USERNAME }}
-        key: ${{ secrets.FSERVERSSHKEY }}
-        port: ${{ secrets.SSH_PORT }}
-        script: |
-          cd
-          cd data360_web
-          rm -r build
-          curl '${{env.AWS_S3_URL}}${{ github.repository }}/${{ needs.buildnumber.outputs.build_number }}/release/data360.tar.gz' -o 'data360.${{ needs.buildnumber.outputs.build_number }}.tar.gz'
-          tar -xf data360.${{ needs.buildnumber.outputs.build_number }}.tar.gz
+     - name: Set up Node modules
+       run: yarn --ignore-engines
+       working-directory: web-ui
 
-    - name: SSH and upload config
-      uses: appleboy/ssh-action@master
-      with:
-        host: ${{ secrets.FSSH_HOST }}
-        username: ${{ secrets.SSH_USERNAME }}
-        key: ${{ secrets.FSERVERSSHKEY }}
-        port: ${{ secrets.SSH_PORT }}
-        script: |
-          cd
-          cd configs
-          rm config.json
-          curl '${{env.AWS_S3_URL}}${{ github.repository }}/${{ needs.buildnumber.outputs.build_number }}/release/config.json' -o 'config.json'
-          
-    - name: SSH and deploy back app
-      uses: appleboy/ssh-action@master
-      with:
-        host: ${{ secrets.FSSH_HOST }}
-        username: ${{ secrets.SSH_USERNAME }}
-        key: ${{ secrets.FSERVERSSHKEY }}
-        port: ${{ secrets.SSH_PORT }}
-        script: |
-          cd
-          cd web-server
-          rm -r dist
-          rm -r node_modules
-          rm package.json
-          rm package-lock.json
-          curl '${{env.AWS_S3_URL}}${{ github.repository }}/${{ needs.buildnumber.outputs.build_number}}/release/data360-server.tar.gz' -o 'data360-server.${{ needs.buildnumber.outputs.build_number }}.tar.gz'
-          tar -xf data360-server.${{ needs.buildnumber.outputs.build_number }}.tar.gz
-          npm install --production
-          pm2 restart node-app
+     - name: Build front end static files
+       run: |
+          yarn build -c production
+          tar zcvf web-ui.tar.gz build && rm -rf build
+       working-directory: web-ui
+     - name: deploly web-ui
+       uses: appleboy/scp-action@master
+       with:
+         host: ${{ matrix.value.ip }}
+         username: ${{ secrets.SSH_USERNAME }}
+         key: ${{ secrets.SSH_KEY }}
+         port: ${{ secrets.SSH_PORT }}
+         source: "./web-ui/web-ui.tar.gz"
+         target: "destination/web-ui"
+     
+     - name: Setup Node 12
+       uses: actions/setup-node@v1
+       with:
+          node-version: 12
 
-    - name: Zuplip Message
-      run: |-
-        curl -sX POST https://zulip.graphtiger.com/api/v1/messages \
-          -u ${{ secrets.ZULIP_JOHN_USERNAME }}:${{ secrets.ZULIP_JOHN_APIKEY }} \
-          --data-urlencode type=stream \
-          --data-urlencode to=Application \
-          --data-urlencode subject=Deployment \
-          --data-urlencode "content=Hi all, Data 360 build number ${{ needs.buildnumber.outputs.build_number }} has been successfully deployed to DEV environment http://34.135.198.69:8081/"
-          
-    - name: Slack Message
-      run: |-
-        curl -X POST ${{secrets.SLACK_APP_DEPLOYMENT_WEBHOOK_URL}} -H 'Content-type:application/json' \
-          --data "{'text':'Hi all, Data 360 build number ${{ needs.buildnumber.outputs.build_number }} has been successfully deployed to DEV environment http://34.135.198.69:8081/'}"
+     - name: Cache Node modules
+       uses: actions/cache@v2
+       id: cache
+       env:
+          cache-name: server-node-modules
+       with:
+          path: ${{ github.workspace }}/web-server/node_modules
+          key: ${{ runner.os }}-server-${{ env.cache-name }}-${{ hashFiles('package.json') }}=
+
+     - name: Set up Node modules
+       run: |
+          npm install
+       working-directory: web-server
+      
+     - name: Build static files
+       run: |
+          npm run build
+          tar zcvf web-server.tar.gz dist package.json package-lock.json && rm -rf dist
+       working-directory: web-server
+     - name: deploy back end static files
+       uses: appleboy/scp-action@master
+       with:
+         host: ${{ matrix.value.ip }}
+         username: ${{ secrets.SSH_USERNAME }}
+         key: ${{ secrets.SSH_KEY }}
+         port: ${{ secrets.SSH_PORT }}
+         source: "./web-server/web-server.tar.gz"
+         target: "destination/web-server"
           
   web-e2e-test:
     runs-on: ubuntu-latest

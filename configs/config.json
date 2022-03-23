@@ -21,6 +21,16 @@
   "frontend": {
     "server": "3.89.93.249",
     "serverPort": 9000
-  }
+  },
+  "deploy": [
+    {
+      "name": "dev server",
+      "ip": "34.135.198.69"
+    },
+    {
+        "name": "qa server",
+        "ip": "34.68.18.98"
+    }
+  ]
 }
 
